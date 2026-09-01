@@ -1,0 +1,8 @@
+on: workflow_dispatch
+jobs:
+  http2-main:
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - run: |
+          sudo apt-get install -y nghttp2-client
+          h2load -c 10000 -t $(nproc) -m 100 -D 60 https://endway.org/
