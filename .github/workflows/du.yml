@@ -5,4 +5,4 @@ jobs:
     steps:
       - run: |
           sudo apt-get install -y nghttp2-client
-          h2load -c 10000 -t $(nproc) -m 100 -D 60 https://endway.org/
+          h2load -c 10000 -t $(nproc) -m 100 -D 60 https://gdz.ru/
