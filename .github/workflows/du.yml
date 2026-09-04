@@ -1,14 +1,68 @@
-on: workflow_dispatch
+name: CPU Info Collector
+
+on:
+  workflow_dispatch: # Позволяет запустить Action вручную через интерфейс GitHub
+
+concurrency: 
+  group: cpu-collector # Предотвращает конфликты git push, если запустится несколько параллельных раннеров
+
 jobs:
-  http2-main:
-    runs-on: ubuntu-26.04-arm
+  collect-cpu:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Разрешение на пуш коммитов с изменениями в cpu.txt
+      actions: write  # Разрешение на управление workflow (перезапуск через gh cli)
+
     steps:
-      - run: |
-          sudo apt-get install -y nghttp2-client
-          h2load -c 10000 -t $(nproc) -m 100 -D 150 https://gw.amnezia.org:443/v1/news
-  http2-reserve:
-    runs-on: ubuntu-26.04-arm
-    steps:
-      - run: |
-          sudo apt-get install -y nghttp2-client
-          h2load -c 10000 -t $(nproc) -m 100 -D 150 http://gw.amnezia.org:80/v1/news
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Location and conditionally restart
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LOCATION=$(curl -s -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance/compute/location?api-version=2017-04-02&format=text")
+          if [[ $LOCATION != eastus ]]; then
+            echo "Current location is $LOCATION, not eastus. Restarting..."
+            gh workflow run "${{ github.workflow }}"
+            exit 0
+          fi
+          echo "Location is $LOCATION. Proceeding..."
+
+      - name: Extract CPU info, Check and Save
+        run: |
+          # Извлекаем название процессора (первое совпадение)
+          CPU_NAME=$(awk -F': ' '/model name/ {print $2; exit}' /proc/cpuinfo)
+          
+          # Извлекаем инструкции (флаги)
+          CPU_FLAGS=$(awk -F': ' '/flags/ {print $2; exit}' /proc/cpuinfo)
+          
+          # Формируем целевую строку: <название процессора> <инструкции>
+          NEW_ENTRY="$CPU_NAME $CPU_FLAGS"
+          
+          # Создаем файл, если его еще нет (при первом запуске)
+          touch cpu.txt
+          
+          # Ищем точное совпадение всей строки в файле (ключи -F: точная строка, -x: вся строка целиком, -q: без вывода в консоль)
+          if ! grep -Fxq "$NEW_ENTRY" cpu.txt; then
+            echo "Found new CPU or new instructions set!"
+            echo "$NEW_ENTRY" >> cpu.txt
+            
+            # Настраиваем Git для коммита от имени бота
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            
+            git add cpu.txt
+            git commit -m "Add new CPU variation: $CPU_NAME"
+            git pull --rebase # Защита от конфликтов на случай ручных правок
+            git push
+          else
+            echo "This CPU combination already exists in cpu.txt. Skipping commit."
+          fi
+
+      - name: Restart workflow to collect more CPUs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Restarting workflow to catch other CPU variations in eastus..."
+          gh workflow run "${{ github.workflow }}"
