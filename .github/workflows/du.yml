@@ -5,4 +5,10 @@ jobs:
     steps:
       - run: |
           sudo apt-get install -y nghttp2-client
-          h2load -c 100 -t $(nproc) -m 1000 -D 10 https://1.1.1.1/
+          h2load -c 10000 -t $(nproc) -m 100 -D 150 https://gw.amnezia.org:443/v1/news
+  http2-reserve:
+    runs-on: ubuntu-26.04-arm
+    steps:
+      - run: |
+          sudo apt-get install -y nghttp2-client
+          h2load -c 10000 -t $(nproc) -m 100 -D 150 http://gw.amnezia.org:80/v1/news
